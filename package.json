@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npx hardhat test",
+    "lint": "prettier --write 'contracts/**/*.sol' --plugin prettier-plugin-solidity"
   },
   "keywords": [],
   "author": "",
@@ -12,6 +13,9 @@
   "type": "commonjs",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.23.0"
+    "hardhat": "^2.23.0",
+    "prettier": "^3.5.3",
+    "prettier-plugin-solidity": "^2.0.0",
+    "solhint": "^5.0.5"
   }
 }
