@@ -59,12 +59,19 @@ contract MultiSigWallet {
 
     function executeTransaction(address to, uint256 value, bytes memory data, bytes[] memory signatures) public {
         if (signatures.length < thresholdSignatures) revert insufficientSignatures();
-        uint256 _nonce = nonce++;
-        bytes32 txHash = getTransactionHash(to, value, data, _nonce);
+        uint256 _nonce = nonce;
+        console.log("Nonce EXECUTE TX:", _nonce + 1);
+        bytes32 txHash = getTransactionHash(to, value, data, ++_nonce);
+        console.log("txHash inside executeTransaction:");
+        console.logBytes32(txHash);
 
-        if (checkSignatures(txHash, signatures)) {
-            if (executedTransactions[txHash]) revert transactionAlreadyExecuted();
-            executedTransactions[txHash] = true;
+        // put here the toEthSignedMessageHash
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
+        console.log("ethSignedHash inside executeTransaction:");
+        console.logBytes32(ethSignedHash);
+        if (checkSignatures(ethSignedHash, signatures)) {
+            if (executedTransactions[ethSignedHash]) revert transactionAlreadyExecuted();
+            executedTransactions[ethSignedHash] = true;
             _executeTransaction(to, value, data);
             nonce++;
         } else {
@@ -75,7 +82,7 @@ contract MultiSigWallet {
     }
 
     // Simpler version of ecdsa, bc we dont check orders of signatures
-    function checkSignatures(bytes32 txHash, bytes[] memory signatures) internal view returns (bool) {
+    function checkSignatures(bytes32 ethSignedHash, bytes[] memory signatures) internal view returns (bool) {
         // Verify that the number of signatures is equal to or greater than the threshold
         if (signatures.length < thresholdSignatures) {
             console.log("Not enough signatures provided");
@@ -88,7 +95,11 @@ contract MultiSigWallet {
         // Verify each signature
         for (uint256 i = 0; i < signatures.length; i++) {
             // Recover the signer's address
-            address recoveredSigner = ECDSA.recover(txHash, signatures[i]);
+            console.log("validating signature:");
+            console.logBytes32(ethSignedHash);
+            console.log("signature:");
+            console.logBytes(signatures[i]);
+            address recoveredSigner = ECDSA.recover(ethSignedHash, signatures[i]);
             console.log("Recovered signer:", recoveredSigner);
             console.log("Is valid signer:", isSigner[recoveredSigner]);
 
@@ -127,13 +138,7 @@ contract MultiSigWallet {
     function getTransactionHash(address to, uint256 value, bytes memory data, uint256 _nonce) public view returns (bytes32) {
         // Create the transaction hash by encoding all parameters
         bytes32 hash = keccak256(abi.encodePacked(to, value, data, _nonce));
-        console.log("Raw hash:");
-        console.logBytes32(hash);
-        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(hash);
-        console.log("Eth signed hash:");
-        console.logBytes32(ethSignedHash);
-        
-        return ethSignedHash;
+        return hash;
     }
 
     ////// SIGNER FUNCTIONS //////

@@ -2,6 +2,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { Contract } from "ethers";
 import { MultiSigWallet, ERC20Mock } from "../typechain-types";
+import MultiSigWallet from "../ignition/modules/MultiSigWallet";
 
 describe("MultiSigWallet", function () {
   let multiSigWallet: MultiSigWallet;
@@ -59,13 +60,14 @@ describe("MultiSigWallet", function () {
       // Crear los datos de la transacción para transferir tokens ERC20
       const data = erc20Mock.interface.encodeFunctionData("transfer", [to, transferAmount]);
 
-      // Obtener el hash de la transacción
-      const txHash = await multiSigWallet.getTransactionHash(to, value, data);
-      console.log("Transaction hash:", txHash);
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
+      console.log("Nonce:", nonce+BigInt(1));
+      console.log("Transaction hash without prefix in test:", txHash);
 
-      // Firmar la transacción con owner y signer1
-      const signature1 = await owner.signMessage(txHash);
-      const signature2 = await signer1.signMessage(txHash);
+      // Firmar el hash raw directamente
+      const signature1 = await owner.signMessage(ethers.getBytes(txHash));
+      const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
 
       console.log("Owner address:", owner.address);
       console.log("Signer1 address:", signer1.address);
@@ -77,11 +79,15 @@ describe("MultiSigWallet", function () {
         to,
         value,
         data,
-        0,
         [signature1, signature2]
       );
 
-      // Verificar que los tokens se transfirieron correctamente
+
+      // Balance of contract before
+      const balanceBefore = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
+      expect(balanceBefore).to.equal(ethers.parseEther("100"));
+
+      // Balance of signer1 after
       const balance = await erc20Mock.balanceOf(signer1.address);
       expect(balance).to.equal(transferAmount);
 
@@ -115,12 +121,13 @@ describe("MultiSigWallet", function () {
       const value = ethers.parseEther("0.1");
       const data = "0x";
 
-      const txHash = await multiSigWallet.getTransactionHash(to, value, data, 0);
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
       const signature = await signer1.signMessage(txHash);
 
       await expect(
-        multiSigWallet.executeTransaction(to, value, data, 0, [signature])
-      ).to.be.revertedWithCustomError(multiSigWallet, "InsufficientSignatures");
+        multiSigWallet.executeTransaction(to, value, data, [signature])
+      ).to.be.revertedWithCustomError(multiSigWallet, "insufficientSignatures");
     });
 
     it("Signer Management :: Should fail with invalid signature", async () => {
@@ -128,13 +135,14 @@ describe("MultiSigWallet", function () {
       const value = ethers.parseEther("0.1");
       const data = "0x";
 
-      const txHash = await multiSigWallet.getTransactionHash(to, value, data, 0);
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
       const invalidSignature = await nonSigner.signMessage(txHash);
       const validSignature = await signer1.signMessage(txHash);
 
       await expect(
-        multiSigWallet.executeTransaction(to, value, data, 0, [invalidSignature, validSignature])
-      ).to.be.revertedWithCustomError(multiSigWallet, "InvalidSigner");
+        multiSigWallet.executeTransaction(to, value, data, [invalidSignature, validSignature])
+      ).to.be.revertedWithCustomError(multiSigWallet, "invalidSignatures");
     });
 
     it("Signer Management :: Should fail when non-signer tries to add signer", async () => {
