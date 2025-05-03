@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import "hardhat/console.sol";
 
 contract MultiSigWallet {
     using ECDSA for bytes32;
@@ -171,7 +170,7 @@ contract MultiSigWallet {
      * @dev Here only 1 signer can remove another signer, not recommended for production.
      *      We could integrate k-of-n multisig to allow more security.
      */
-    function removeSigner(address _signer) public {
+    function removeSigner(address _signer, uint256 _newThreshold) public {
         if (!isSigner[msg.sender]) revert unauthorized();
         if (!isSigner[_signer]) revert signerNotFound();
         if (signers.length <= thresholdSignatures) revert incorrectThreshold();
@@ -187,8 +186,10 @@ contract MultiSigWallet {
                 break;
             }
         }
+        thresholdSignatures = _newThreshold;
 
         emit SignerRemoved(msg.sender, _signer);
+        emit ThresholdUpdated(msg.sender, _newThreshold);
     }
 
     function _executeTransaction(address destinationContract, uint256 value, bytes memory data) internal returns (bool success, bytes memory returnData) {

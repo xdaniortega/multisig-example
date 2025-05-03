@@ -52,34 +52,25 @@ describe("MultiSigWallet", function () {
 
   describe("Happy Path Scenarios", () => {
     it("Transaction Execution :: Should execute ERC20 transfer with valid signatures", async () => {
-      // Preparar la transacción de transferencia de ERC20
+      // Prepare the ERC20 transfer transaction
       const to = signer1.address;
-      const value = ethers.parseEther("0"); // No enviamos ETH
-      const transferAmount = ethers.parseEther("50"); // Transferimos 50 tokens
+      const value = ethers.parseEther("0"); // No ETH being sent
+      const transferAmount = ethers.parseEther("50"); // Transfer 50 tokens
       
-      // Crear los datos de la transacción para transferir tokens ERC20
+      // Create transaction data for ERC20 token transfer
       const data = erc20Mock.interface.encodeFunctionData("transfer", [to, transferAmount]);
 
       const nonce = await multiSigWallet.nonce();
       const txHash = await multiSigWallet.getTransactionHash(await erc20Mock.getAddress(), value, data, nonce + BigInt(1));
-      console.log("Nonce:", nonce+BigInt(1));
-      console.log("Transaction hash without prefix in test:", txHash);
 
-      // Firmar el hash raw directamente
+      // Sign the raw hash directly
       const signature1 = await owner.signMessage(ethers.getBytes(txHash));
       const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
+      // Balance of contract before
+      const balanceBefore = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
+      expect(balanceBefore).to.equal(ethers.parseEther("100"));
 
-      console.log("Owner address:", owner.address);
-      console.log("Signer1 address:", signer1.address);
-      console.log("Signature1:", signature1);
-      console.log("Signature2:", signature2);
-
-            // Balance of contract before
-            const balanceBefore = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
-            expect(balanceBefore).to.equal(ethers.parseEther("100"));
-
-            
-      // Ejecutar la transacción
+      // Execute the transaction
       await multiSigWallet.executeTransaction(
         await erc20Mock.getAddress(),
         value,
@@ -90,13 +81,12 @@ describe("MultiSigWallet", function () {
       // Balance of contract after
       const balanceAfter = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
       expect(balanceAfter).to.equal(ethers.parseEther("50"));
-      
 
       // Balance of signer1 after
       const balance = await erc20Mock.balanceOf(signer1.address);
       expect(balance).to.equal(transferAmount);
 
-      // Verificar que el balance del MultiSigWallet se redujo
+      // Verify that the MultiSigWallet balance decreased
       const multiSigBalance = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
       expect(multiSigBalance).to.equal(ethers.parseEther("50")); // 100 - 50 = 50
     });
@@ -113,10 +103,12 @@ describe("MultiSigWallet", function () {
     });
 
     it("Signer Management :: Should remove signer and update threshold", async () => {
-      await multiSigWallet.removeSigner(signer3.address);
+      let newThreshold = 2;
+      await multiSigWallet.removeSigner(signer3.address, newThreshold);
 
       const signers = await multiSigWallet.getSigners();
       expect(signers).to.not.include(signer3.address);
+      expect(await multiSigWallet.thresholdSignatures()).to.equal(newThreshold);
     });
   });
 
@@ -152,8 +144,8 @@ describe("MultiSigWallet", function () {
 
     it("Signer Management :: Should fail when non-signer tries to add signer", async () => {
       await expect(
-        multiSigWallet.connect(nonSigner).addSignerAndUpdateThreshold(nonSigner.address, 2)
-      ).to.be.revertedWithCustomError(multiSigWallet, "NotSigner");
+        multiSigWallet.connect(signer3).addSignerAndUpdateThreshold(signer3.address, 2)
+      ).to.be.revertedWithCustomError(multiSigWallet, "unauthorized");
     });
   });
 }); 
