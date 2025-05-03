@@ -61,7 +61,7 @@ describe("MultiSigWallet", function () {
       const data = erc20Mock.interface.encodeFunctionData("transfer", [to, transferAmount]);
 
       const nonce = await multiSigWallet.nonce();
-      const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
+      const txHash = await multiSigWallet.getTransactionHash(await erc20Mock.getAddress(), value, data, nonce + BigInt(1));
       console.log("Nonce:", nonce+BigInt(1));
       console.log("Transaction hash without prefix in test:", txHash);
 
@@ -74,18 +74,23 @@ describe("MultiSigWallet", function () {
       console.log("Signature1:", signature1);
       console.log("Signature2:", signature2);
 
+            // Balance of contract before
+            const balanceBefore = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
+            expect(balanceBefore).to.equal(ethers.parseEther("100"));
+
+            
       // Ejecutar la transacción
       await multiSigWallet.executeTransaction(
-        to,
+        await erc20Mock.getAddress(),
         value,
         data,
         [signature1, signature2]
       );
 
-
-      // Balance of contract before
-      const balanceBefore = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
-      expect(balanceBefore).to.equal(ethers.parseEther("100"));
+      // Balance of contract after
+      const balanceAfter = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
+      expect(balanceAfter).to.equal(ethers.parseEther("50"));
+      
 
       // Balance of signer1 after
       const balance = await erc20Mock.balanceOf(signer1.address);

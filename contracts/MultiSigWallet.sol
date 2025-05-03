@@ -57,22 +57,19 @@ contract MultiSigWallet {
         setupSigners(_signers, _thresholdSignatures);
     }
 
-    function executeTransaction(address to, uint256 value, bytes memory data, bytes[] memory signatures) public {
+//todo: move to argument as encoded parameters
+//todo: improve 
+    function executeTransaction(address destinationContract, uint256 value, bytes memory data, bytes[] memory signatures) public {
         if (signatures.length < thresholdSignatures) revert insufficientSignatures();
         uint256 _nonce = nonce;
-        console.log("Nonce EXECUTE TX:", _nonce + 1);
-        bytes32 txHash = getTransactionHash(to, value, data, ++_nonce);
-        console.log("txHash inside executeTransaction:");
-        console.logBytes32(txHash);
+        bytes32 txHash = getTransactionHash(destinationContract, value, data, ++_nonce);
 
         // put here the toEthSignedMessageHash
         bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
-        console.log("ethSignedHash inside executeTransaction:");
-        console.logBytes32(ethSignedHash);
         if (checkSignatures(ethSignedHash, signatures)) {
             if (executedTransactions[ethSignedHash]) revert transactionAlreadyExecuted();
             executedTransactions[ethSignedHash] = true;
-            _executeTransaction(to, value, data);
+            _executeTransaction(destinationContract, value, data);
             nonce++;
         } else {
             revert invalidSignatures();
@@ -85,8 +82,7 @@ contract MultiSigWallet {
     function checkSignatures(bytes32 ethSignedHash, bytes[] memory signatures) internal view returns (bool) {
         // Verify that the number of signatures is equal to or greater than the threshold
         if (signatures.length < thresholdSignatures) {
-            console.log("Not enough signatures provided");
-            return false;
+            revert insufficientSignatures();
         }
 
         address[] memory recoveredSigners = new address[](signatures.length);
@@ -95,21 +91,13 @@ contract MultiSigWallet {
         // Verify each signature
         for (uint256 i = 0; i < signatures.length; i++) {
             // Recover the signer's address
-            console.log("validating signature:");
-            console.logBytes32(ethSignedHash);
-            console.log("signature:");
-            console.logBytes(signatures[i]);
             address recoveredSigner = ECDSA.recover(ethSignedHash, signatures[i]);
-            console.log("Recovered signer:", recoveredSigner);
-            console.log("Is valid signer:", isSigner[recoveredSigner]);
-
             // Verify that the signer is a valid owner
             if (isSigner[recoveredSigner]) {
                 // Verify that this signer hasn't signed before (avoid duplicates)
                 bool isDuplicate = false;
                 for (uint256 j = 0; j < validSignatures; j++) {
                     if (recoveredSigners[j] == recoveredSigner) {
-                        console.log("Duplicate signature found");
                         isDuplicate = true;
                         break;
                     }
@@ -119,25 +107,20 @@ contract MultiSigWallet {
                 if (!isDuplicate) {
                     recoveredSigners[validSignatures] = recoveredSigner;
                     validSignatures++;
-                    console.log("Valid signatures count:", validSignatures);
-
                     // If we reach the threshold, we can return true
                     if (validSignatures >= thresholdSignatures) {
-                        console.log("Threshold reached!");
                         return true;
                     }
                 }
             }
         }
 
-        // We didn't reach the threshold of valid signatures
-        console.log("Not enough valid signatures");
         return false;
     }
 
-    function getTransactionHash(address to, uint256 value, bytes memory data, uint256 _nonce) public view returns (bytes32) {
+    function getTransactionHash(address destinationContract, uint256 value, bytes memory data, uint256 _nonce) public view returns (bytes32) {
         // Create the transaction hash by encoding all parameters
-        bytes32 hash = keccak256(abi.encodePacked(to, value, data, _nonce));
+        bytes32 hash = keccak256(abi.encodePacked(destinationContract, value, data, _nonce));
         return hash;
     }
 
@@ -208,8 +191,8 @@ contract MultiSigWallet {
         emit SignerRemoved(msg.sender, _signer);
     }
 
-    function _executeTransaction(address to, uint256 value, bytes memory data) internal returns (bool success, bytes memory returnData) {
-        (success, returnData) = to.call{value: value}(data);
+    function _executeTransaction(address destinationContract, uint256 value, bytes memory data) internal returns (bool success, bytes memory returnData) {
+        (success, returnData) = destinationContract.call{value: value}(data);
         if (!success) revert executionFailed();
     }
 
