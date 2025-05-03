@@ -5,17 +5,40 @@
   "main": "index.js",
   "scripts": {
     "test": "npx hardhat test",
-    "lint": "prettier --write 'contracts/**/*.sol' --plugin prettier-plugin-solidity"
+    "lint": "prettier --write 'contracts/**/*.sol'"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.8",
+    "@nomicfoundation/hardhat-ethers": "^3.0.8",
+    "@nomicfoundation/hardhat-ignition": "^0.15.11",
+    "@nomicfoundation/hardhat-ignition-ethers": "^0.15.11",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.12",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.13",
+    "@nomicfoundation/ignition-core": "^0.15.11",
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@openzeppelin/contracts": "^5.3.0",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^5.2.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.15.3",
+    "chai": "^4.2.0",
+    "dotenv": "^16.5.0",
+    "ethers": "^6.1.0",
     "hardhat": "^2.23.0",
+    "hardhat-deploy": "^1.0.2",
+    "hardhat-gas-reporter": "^2.2.3",
     "prettier": "^3.5.3",
     "prettier-plugin-solidity": "^2.0.0",
-    "solhint": "^5.0.5"
+    "solhint": "^5.0.5",
+    "solidity-coverage": "^0.8.15",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^5.8.3"
   }
 }

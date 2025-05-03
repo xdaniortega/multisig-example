@@ -1,24 +1,57 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-// import "hardhat/console.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "hardhat/console.sol";
 
 contract MultiSigWallet {
+    using ECDSA for bytes32;
+
     error incorrectThreshold();
     error incorrectSigner();
     error unauthorized();
     error insufficientSignatures();
     error invalidSignatures();
+    error executionFailed();
+    error invalidNonce();
+    error signerAlreadyExists();
+    error signerNotFound();
+    error transactionAlreadyExecuted();
 
-    event SignersSetup(address indexed wallet, address[] signers, uint256 threshold);
-    event SignerAdded(address indexed signer, uint256 threshold);
-    event TransactionExecuted(bytes32 indexed messageId, address indexed executor);
-    event ThresholdUpdated(address indexed signer, uint256 threshold);
+    event SignersSetup(
+        address indexed wallet,
+        address[] signers,
+        uint256 threshold
+    );
+    
+    event SignerAdded(
+        address indexed operator,
+        address indexed signer,
+        uint256 threshold
+    );
+    
+    event SignerRemoved(
+        address indexed operator,
+        address indexed signer
+    );
+    
+    event TransactionExecuted(
+        address indexed executor,
+        bytes32 indexed messageId
+    );
+    
+    event ThresholdUpdated(
+        address indexed operator,
+        uint256 threshold
+    );
 
     mapping(address => bool) public isSigner;
     address[] public signers;
     uint256 public thresholdSignatures;
+    uint256 public nonce;
+    mapping(bytes32 => bool) public executedTransactions;
+    mapping(bytes32 => uint256) public signedTransactions;
 
     constructor(address[] memory _signers, uint256 _thresholdSignatures) {
         setupSigners(_signers, _thresholdSignatures);
@@ -26,51 +59,46 @@ contract MultiSigWallet {
 
     function executeTransaction(address to, uint256 value, bytes memory data, bytes[] memory signatures) public {
         if (signatures.length < thresholdSignatures) revert insufficientSignatures();
+        uint256 _nonce = nonce++;
+        bytes32 txHash = getTransactionHash(to, value, data, _nonce);
 
-        bytes32 messageId = keccak256(abi.encodePacked(to, value, data));
-
-        if (checkSignatures(messageId, signatures)) {
-            _executeTransaction(to, value, data); //todo: delegate call
+        if (checkSignatures(txHash, signatures)) {
+            if (executedTransactions[txHash]) revert transactionAlreadyExecuted();
+            executedTransactions[txHash] = true;
+            _executeTransaction(to, value, data);
+            nonce++;
         } else {
             revert invalidSignatures();
         }
 
-        emit TransactionExecuted(messageId, msg.sender);
-    }
-
-    /**
-     * @notice Returns the hash of a transaction.
-     * @dev Potentially we could use EIP-712 to sign transactions.
-     * @param to The address of the contract to call.
-     * @param value The value to send with the transaction.
-     * @param data The data to send with the transaction.
-     * @return The hash of the transaction.
-     */
-    function getTransactionHash(address to, uint256 value, bytes memory data) public view returns (bytes32) {
-        return keccak256(abi.encodePacked(to, value, data));
+        emit TransactionExecuted(msg.sender, txHash);
     }
 
     // Simpler version of ecdsa, bc we dont check orders of signatures
-    function checkSignatures(bytes32 messageId, bytes[] memory signatures) internal view returns (bool) {
+    function checkSignatures(bytes32 txHash, bytes[] memory signatures) internal view returns (bool) {
         // Verify that the number of signatures is equal to or greater than the threshold
-        if (signatures.length < threshold) {
+        if (signatures.length < thresholdSignatures) {
+            console.log("Not enough signatures provided");
             return false;
         }
 
-        address[] memory signers = new address[](signatures.length);
+        address[] memory recoveredSigners = new address[](signatures.length);
         uint256 validSignatures = 0;
 
         // Verify each signature
         for (uint256 i = 0; i < signatures.length; i++) {
             // Recover the signer's address
-            address recoveredSigner = ECDSA.recover(messageId, signatures[i]);
+            address recoveredSigner = ECDSA.recover(txHash, signatures[i]);
+            console.log("Recovered signer:", recoveredSigner);
+            console.log("Is valid signer:", isSigner[recoveredSigner]);
 
             // Verify that the signer is a valid owner
-            if (isOwner[recoveredSigner]) {
+            if (isSigner[recoveredSigner]) {
                 // Verify that this signer hasn't signed before (avoid duplicates)
                 bool isDuplicate = false;
                 for (uint256 j = 0; j < validSignatures; j++) {
-                    if (signers[j] == recoveredSigner) {
+                    if (recoveredSigners[j] == recoveredSigner) {
+                        console.log("Duplicate signature found");
                         isDuplicate = true;
                         break;
                     }
@@ -78,11 +106,13 @@ contract MultiSigWallet {
 
                 // If not a duplicate, count it as a valid signature
                 if (!isDuplicate) {
-                    signers[validSignatures] = recoveredSigner;
+                    recoveredSigners[validSignatures] = recoveredSigner;
                     validSignatures++;
+                    console.log("Valid signatures count:", validSignatures);
 
                     // If we reach the threshold, we can return true
-                    if (validSignatures >= threshold) {
+                    if (validSignatures >= thresholdSignatures) {
+                        console.log("Threshold reached!");
                         return true;
                     }
                 }
@@ -90,7 +120,20 @@ contract MultiSigWallet {
         }
 
         // We didn't reach the threshold of valid signatures
+        console.log("Not enough valid signatures");
         return false;
+    }
+
+    function getTransactionHash(address to, uint256 value, bytes memory data, uint256 _nonce) public view returns (bytes32) {
+        // Create the transaction hash by encoding all parameters
+        bytes32 hash = keccak256(abi.encodePacked(to, value, data, _nonce));
+        console.log("Raw hash:");
+        console.logBytes32(hash);
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(hash);
+        console.log("Eth signed hash:");
+        console.logBytes32(ethSignedHash);
+        
+        return ethSignedHash;
     }
 
     ////// SIGNER FUNCTIONS //////
@@ -106,28 +149,32 @@ contract MultiSigWallet {
         if (_threshold > signersLength || _threshold == 0) revert incorrectThreshold();
 
         for (uint256 i = 0; i < signersLength; ++i) {
-            // Owner address cannot be null.
             address signer = _signers[i];
+            // Owner address cannot be null or the contract itself
             if (signer == address(0) || signer == address(this)) revert incorrectSigner();
-            if (signers[signer] != address(0)) revert incorrectSigner();
-            signers[signer] = signer;
+            // Check if signer already exists
+            if (isSigner[signer]) revert signerAlreadyExists();
+            
+            signers.push(signer);
             isSigner[signer] = true;
         }
         thresholdSignatures = _threshold;
 
-        emit SignersSetup(address(this), _signers, _threshold);
+        emit SignersSetup(msg.sender, _signers, _threshold);
     }
 
-    function addSignerAndUpdateThreshold(address _signer, uint256 _newthreshold) public {
+    function addSignerAndUpdateThreshold(address _signer, uint256 _newThreshold) public {
         if (!isSigner[msg.sender]) revert unauthorized();
-        if (_newthreshold < signers.length + 1) revert incorrectThreshold();
+        if (_signer == address(0) || _signer == address(this)) revert incorrectSigner();
+        if (isSigner[_signer]) revert signerAlreadyExists();
+        if (_newThreshold > signers.length + 1 || _newThreshold == 0) revert incorrectThreshold();
 
         isSigner[_signer] = true;
         signers.push(_signer);
-        thresholdSignatures = _newthreshold;
+        thresholdSignatures = _newThreshold;
 
-        emit SignerAdded(msg.sender, _signer);
-        emit ThresholdUpdated(msg.sender, _newthreshold);
+        emit SignerAdded(msg.sender, _signer, _newThreshold);
+        emit ThresholdUpdated(msg.sender, _newThreshold);
     }
 
     /**
@@ -138,9 +185,31 @@ contract MultiSigWallet {
      */
     function removeSigner(address _signer) public {
         if (!isSigner[msg.sender]) revert unauthorized();
-        isSigner[_signer] = false;
-        thresholdSignatures--;
+        if (!isSigner[_signer]) revert signerNotFound();
+        if (signers.length <= thresholdSignatures) revert incorrectThreshold();
 
-        emit SignerRemoved(_signer);
+        // Remove signer from mapping
+        isSigner[_signer] = false;
+
+        // Remove signer from array
+        for (uint256 i = 0; i < signers.length; i++) {
+            if (signers[i] == _signer) {
+                signers[i] = signers[signers.length - 1];
+                signers.pop();
+                break;
+            }
+        }
+
+        emit SignerRemoved(msg.sender, _signer);
+    }
+
+    function _executeTransaction(address to, uint256 value, bytes memory data) internal returns (bool success, bytes memory returnData) {
+        (success, returnData) = to.call{value: value}(data);
+        if (!success) revert executionFailed();
+    }
+
+    // Function to get all current signers
+    function getSigners() public view returns (address[] memory) {
+        return signers;
     }
 }

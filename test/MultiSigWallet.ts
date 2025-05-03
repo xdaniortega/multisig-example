@@ -1,127 +1,146 @@
-import {
-  time,
-  loadFixture,
-} from "@nomicfoundation/hardhat-toolbox/network-helpers";
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { expect } from "chai";
-import hre from "hardhat";
+import { ethers } from "hardhat";
+import { Contract } from "ethers";
+import { MultiSigWallet, ERC20Mock } from "../typechain-types";
 
-describe("Lock", function () {
-  // We define a fixture to reuse the same setup in every test.
-  // We use loadFixture to run this setup once, snapshot that state,
-  // and reset Hardhat Network to that snapshot in every test.
-  async function deployOneYearLockFixture() {
-    const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
-    const ONE_GWEI = 1_000_000_000;
+describe("MultiSigWallet", function () {
+  let multiSigWallet: MultiSigWallet;
+  let erc20Mock: ERC20Mock;
+  let owner: any;
+  let signer1: any;
+  let signer2: any;
+  let signer3: any;
+  let nonSigner: any;
+  let threshold: number;
 
-    const lockedAmount = ONE_GWEI;
-    const unlockTime = (await time.latest()) + ONE_YEAR_IN_SECS;
+  before(async () => {
+    [owner, signer1, signer2, signer3, nonSigner] = await ethers.getSigners();
+    const initialSigners = [owner.address, signer1.address, signer2.address, signer3.address];
+    threshold = 2; //we'll set threshold to 2, so 2 out of 4 signatures are required
 
-    // Contracts are deployed using the first signer/account by default
-    const [owner, otherAccount] = await hre.ethers.getSigners();
+    const MultiSigWallet = await ethers.getContractFactory("MultiSigWallet");
+    multiSigWallet = await MultiSigWallet.deploy(initialSigners, threshold);
 
-    const Lock = await hre.ethers.getContractFactory("Lock");
-    const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+    //First we send 100 ERC20 tokens to the multiSigWallet
+    const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
+    erc20Mock = await ERC20Mock.deploy("ERC20Mock", "ERC20Mock", owner.address, ethers.parseEther("1000000"));
+    await erc20Mock.connect(owner).transfer(await multiSigWallet.getAddress(), ethers.parseEther("100"));
+  });
 
-    return { lock, unlockTime, lockedAmount, owner, otherAccount };
-  }
 
-  describe("Deployment", function () {
-    it("Should set the right unlockTime", async function () {
-      const { lock, unlockTime } = await loadFixture(deployOneYearLockFixture);
-
-      expect(await lock.unlockTime()).to.equal(unlockTime);
+  describe("Deployment", () => {
+    it("Should have set the correct initial signers", async () => {
+      const signers = await multiSigWallet.getSigners();
+      
+      expect(signers).to.include(owner.address);
+      expect(signers).to.include(signer1.address);
+      expect(signers).to.include(signer2.address);
+      expect(signers).to.include(signer3.address);
+      expect(signers.length).to.equal(4);
     });
 
-    it("Should set the right owner", async function () {
-      const { lock, owner } = await loadFixture(deployOneYearLockFixture);
-
-      expect(await lock.owner()).to.equal(owner.address);
+    it("Should have set the correct threshold", async function () {
+      expect(await multiSigWallet.thresholdSignatures()).to.equal(threshold);
     });
 
-    it("Should receive and store the funds to lock", async function () {
-      const { lock, lockedAmount } = await loadFixture(
-        deployOneYearLockFixture
-      );
-
-      expect(await hre.ethers.provider.getBalance(lock.target)).to.equal(
-        lockedAmount
-      );
-    });
-
-    it("Should fail if the unlockTime is not in the future", async function () {
-      // We don't use the fixture here because we want a different deployment
-      const latestTime = await time.latest();
-      const Lock = await hre.ethers.getContractFactory("Lock");
-      await expect(Lock.deploy(latestTime, { value: 1 })).to.be.revertedWith(
-        "Unlock time should be in the future"
-      );
+    it("Should have set the correct initial balance", async () => {
+      const balance = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
+      expect(balance).to.equal(ethers.parseEther("100"));
     });
   });
 
-  describe("Withdrawals", function () {
-    describe("Validations", function () {
-      it("Should revert with the right error if called too soon", async function () {
-        const { lock } = await loadFixture(deployOneYearLockFixture);
+  describe("Happy Path Scenarios", () => {
+    it("Transaction Execution :: Should execute ERC20 transfer with valid signatures", async () => {
+      // Preparar la transacción de transferencia de ERC20
+      const to = signer1.address;
+      const value = ethers.parseEther("0"); // No enviamos ETH
+      const transferAmount = ethers.parseEther("50"); // Transferimos 50 tokens
+      
+      // Crear los datos de la transacción para transferir tokens ERC20
+      const data = erc20Mock.interface.encodeFunctionData("transfer", [to, transferAmount]);
 
-        await expect(lock.withdraw()).to.be.revertedWith(
-          "You can't withdraw yet"
-        );
-      });
+      // Obtener el hash de la transacción
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data);
+      console.log("Transaction hash:", txHash);
 
-      it("Should revert with the right error if called from another account", async function () {
-        const { lock, unlockTime, otherAccount } = await loadFixture(
-          deployOneYearLockFixture
-        );
+      // Firmar la transacción con owner y signer1
+      const signature1 = await owner.signMessage(txHash);
+      const signature2 = await signer1.signMessage(txHash);
 
-        // We can increase the time in Hardhat Network
-        await time.increaseTo(unlockTime);
+      console.log("Owner address:", owner.address);
+      console.log("Signer1 address:", signer1.address);
+      console.log("Signature1:", signature1);
+      console.log("Signature2:", signature2);
 
-        // We use lock.connect() to send a transaction from another account
-        await expect(lock.connect(otherAccount).withdraw()).to.be.revertedWith(
-          "You aren't the owner"
-        );
-      });
+      // Ejecutar la transacción
+      await multiSigWallet.executeTransaction(
+        to,
+        value,
+        data,
+        0,
+        [signature1, signature2]
+      );
 
-      it("Shouldn't fail if the unlockTime has arrived and the owner calls it", async function () {
-        const { lock, unlockTime } = await loadFixture(
-          deployOneYearLockFixture
-        );
+      // Verificar que los tokens se transfirieron correctamente
+      const balance = await erc20Mock.balanceOf(signer1.address);
+      expect(balance).to.equal(transferAmount);
 
-        // Transactions are sent using the first signer by default
-        await time.increaseTo(unlockTime);
-
-        await expect(lock.withdraw()).not.to.be.reverted;
-      });
+      // Verificar que el balance del MultiSigWallet se redujo
+      const multiSigBalance = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
+      expect(multiSigBalance).to.equal(ethers.parseEther("50")); // 100 - 50 = 50
     });
 
-    describe("Events", function () {
-      it("Should emit an event on withdrawals", async function () {
-        const { lock, unlockTime, lockedAmount } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    it("Signer Management :: Should add new signer and update threshold", async () => {
+      const newSigner = nonSigner;
+      const newThreshold = 3;
 
-        await time.increaseTo(unlockTime);
+      await multiSigWallet.addSignerAndUpdateThreshold(newSigner.address, newThreshold);
 
-        await expect(lock.withdraw())
-          .to.emit(lock, "Withdrawal")
-          .withArgs(lockedAmount, anyValue); // We accept any value as `when` arg
-      });
+      const signers = await multiSigWallet.getSigners();
+      expect(signers).to.include(newSigner.address);
+      expect(await multiSigWallet.thresholdSignatures()).to.equal(newThreshold);
     });
 
-    describe("Transfers", function () {
-      it("Should transfer the funds to the owner", async function () {
-        const { lock, unlockTime, lockedAmount, owner } = await loadFixture(
-          deployOneYearLockFixture
-        );
+    it("Signer Management :: Should remove signer and update threshold", async () => {
+      await multiSigWallet.removeSigner(signer3.address);
 
-        await time.increaseTo(unlockTime);
-
-        await expect(lock.withdraw()).to.changeEtherBalances(
-          [owner, lock],
-          [lockedAmount, -lockedAmount]
-        );
-      });
+      const signers = await multiSigWallet.getSigners();
+      expect(signers).to.not.include(signer3.address);
     });
   });
-});
+
+  describe("Unhappy Path Scenarios", () => {
+    it("Signer Management :: Should fail with insufficient signatures", async () => {
+      const to = nonSigner.address;
+      const value = ethers.parseEther("0.1");
+      const data = "0x";
+
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data, 0);
+      const signature = await signer1.signMessage(txHash);
+
+      await expect(
+        multiSigWallet.executeTransaction(to, value, data, 0, [signature])
+      ).to.be.revertedWithCustomError(multiSigWallet, "InsufficientSignatures");
+    });
+
+    it("Signer Management :: Should fail with invalid signature", async () => {
+      const to = nonSigner.address;
+      const value = ethers.parseEther("0.1");
+      const data = "0x";
+
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data, 0);
+      const invalidSignature = await nonSigner.signMessage(txHash);
+      const validSignature = await signer1.signMessage(txHash);
+
+      await expect(
+        multiSigWallet.executeTransaction(to, value, data, 0, [invalidSignature, validSignature])
+      ).to.be.revertedWithCustomError(multiSigWallet, "InvalidSigner");
+    });
+
+    it("Signer Management :: Should fail when non-signer tries to add signer", async () => {
+      await expect(
+        multiSigWallet.connect(nonSigner).addSignerAndUpdateThreshold(nonSigner.address, 2)
+      ).to.be.revertedWithCustomError(multiSigWallet, "NotSigner");
+    });
+  });
+}); 
