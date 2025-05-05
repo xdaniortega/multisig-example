@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
+import "hardhat/console.sol";
 
 contract MultiSigWallet {
   using ECDSA for bytes32;
@@ -19,13 +20,9 @@ contract MultiSigWallet {
   error transactionAlreadyExecuted();
 
   event SignersSetup(address indexed wallet, address[] signers, uint256 threshold);
-
   event SignerAdded(address indexed operator, address indexed signer, uint256 threshold);
-
   event SignerRemoved(address indexed operator, address indexed signer);
-
   event TransactionExecuted(address indexed executor, bytes32 indexed messageId);
-
   event ThresholdUpdated(address indexed operator, uint256 threshold);
 
   mapping(address => bool) public isSigner;
@@ -39,8 +36,6 @@ contract MultiSigWallet {
     setupSigners(_signers, _thresholdSignatures);
   }
 
-  //todo: move to argument as encoded parameters
-  //todo: improve
   function executeTransaction(
     address destinationContract,
     uint256 value,
@@ -50,13 +45,13 @@ contract MultiSigWallet {
     if (signatures.length < thresholdSignatures) revert insufficientSignatures();
     uint256 _nonce = nonce;
     bytes32 txHash = getTransactionHash(destinationContract, value, data, ++_nonce);
-
-    // put here the toEthSignedMessageHash
     bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
+  console.log("prev nonce", nonce);
     if (checkSignatures(ethSignedHash, signatures)) {
       if (executedTransactions[ethSignedHash]) revert transactionAlreadyExecuted();
       executedTransactions[ethSignedHash] = true;
-      nonce++;
+      nonce = _nonce;
+      console.log("nonce updated",nonce);
       _executeTransaction(destinationContract, value, data);
     } else {
       revert invalidSignatures();
@@ -65,7 +60,7 @@ contract MultiSigWallet {
     emit TransactionExecuted(msg.sender, txHash);
   }
 
-  // Simpler version of ecdsa, bc we dont check orders of signatures
+  // Simpler version of ecdsa, bc we dont check order of signatures
   function checkSignatures(
     bytes32 ethSignedHash,
     bytes[] memory signatures

@@ -73,14 +73,8 @@ task('generate-tx', 'Generates transaction data for the MultiSig')
     const value = hre.ethers.parseEther('0');
     const txHash = await multiSigWallet.getTransactionHash(destination, value, data, nonce);
 
-    console.log('Transaction Hash:', txHash);
-    console.log('Transaction Data:', {
-      destination,
-      value: value.toString(),
-      data,
-      nonce: nonce.toString(),
-      transferAmount: amount ? hre.ethers.parseEther(amount).toString() : undefined
-    });
+    console.log('Transaction Hash (what has to be signed):', txHash);
+    console.log('Transaction Data (what we want to execute):', data);
   });
 
 task('sign-tx', 'Signs a MultiSig transaction')
@@ -96,7 +90,6 @@ task('sign-tx', 'Signs a MultiSig transaction')
     const signature = await signer.signMessage(hashBytes);
 
     console.log('Original Hash:', txHash);
-    console.log('Hash Bytes:', hashBytes);
     console.log('Signature:', signature);
     console.log('Signer Address:', signer.address);
     console.log('Signer Index:', signerIndex);
@@ -127,25 +120,10 @@ task('execute-tx', 'Executes a signed MultiSig transaction')
     console.log('Signatures:', signatureArray);
 
     try {
-      // Get the ERC20 contract instance
-      const erc20Mock = await hre.ethers.getContractAt('ERC20Mock', destinationContractAddress);
-      
-      // Create the data manually
-      const iface = new hre.ethers.Interface([
-        'function transfer(address to, uint256 amount)'
-      ]);
-
-      // Extract recipient and amount from the data
-      const recipient = '0x' + data.slice(34, 74);
-      const amount = BigInt('0x' + data.slice(74));
-
-      // Encode the data
-      const encodedData = iface.encodeFunctionData('transfer', [recipient, amount]);
-
       const tx = await multiSigWallet.executeTransaction(
         destinationContractAddress,
         valueBigInt,
-        encodedData,
+        data,
         signatureArray
       );
 
