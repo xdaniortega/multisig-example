@@ -42,41 +42,42 @@ task('fund-wallet', 'Transfers ERC20 tokens to a MultiSig wallet')
 
 task('generate-tx', 'Generates transaction data for the MultiSig')
   .addPositionalParam('operation', 'Operation to perform (transfer, addSigners, removeSigners)')
-  .addPositionalParam('destinationAddress', 'MultiSig wallet address')
-  .addPositionalParam('tokenAddress', 'ERC20 token address (for transfer) or new signer (for add/remove)')
-  .addPositionalParam('recipientAddress', 'Recipient address (for transfer) or new threshold (for add/remove)')
-  .addPositionalParam('amount', 'Amount of tokens (only for transfer)')
+  .addPositionalParam('multiSigAddress', 'Address of the MultiSig wallet')
+  .addPositionalParam('targetAddress', 'Target address (token address for transfer, new signer for add/remove)')
+  .addPositionalParam('param2', 'Second parameter (recipient for transfer, new threshold for add/remove)')
+  .addPositionalParam('param3', 'Third parameter (amount for transfer, not used for add/remove)')
   .setAction(async (taskArgs, hre) => {
-    const { operation, destinationAddress, tokenAddress, recipientAddress, amount } = taskArgs;
-    const multiSigWallet = await hre.ethers.getContractAt('MultiSigWallet', destinationAddress);
-    const erc20Mock = await hre.ethers.getContractAt('ERC20Mock', tokenAddress);
+    const { operation, multiSigAddress, targetAddress, param2, param3 } = taskArgs;
+    const multiSigWallet = await hre.ethers.getContractAt('MultiSigWallet', multiSigAddress);
+    const erc20Mock = await hre.ethers.getContractAt('ERC20Mock', targetAddress);
 
     let data: string;
     let destination: string;
 
     if (operation === 'transfer') {
-      const transferAmount = hre.ethers.parseEther(amount);
-      data = erc20Mock.interface.encodeFunctionData('transfer', [recipientAddress, transferAmount]);
+      const transferAmount = hre.ethers.parseEther(param3);
+      data = erc20Mock.interface.encodeFunctionData('transfer', [param2, transferAmount]);
       destination = await erc20Mock.getAddress();
     } else if (operation === 'addSigners' || operation === 'removeSigners') {
-      const multiSigInterface = new hre.ethers.Interface([
-        'function updateSignerSet(address signer, bool isAdd, uint256 newThreshold, bytes[] signatures)',
-      ]);
-      data = multiSigInterface.encodeFunctionData('updateSignerSet', [
-        tokenAddress,
+      data = multiSigWallet.interface.encodeFunctionData('updateSignerSet', [
+        param2,
         operation === 'addSigners',
-        recipientAddress,
-        [] // Empty signatures array as they will be provided during execution
+        param3
       ]);
-      destination = destinationAddress;
+      destination = multiSigAddress;
     } else {
       throw new Error('Invalid operation. Use: transfer, addSigners, or removeSigners');
     }
 
-    const nonce = await multiSigWallet.nonce() + BigInt(1);
+    const currentNonce = await multiSigWallet.nonce();
+    const nextNonce = currentNonce + BigInt(1);
     const value = hre.ethers.parseEther('0');
-    const txHash = await multiSigWallet.getTransactionHash(destination, value, data, nonce);
+    const txHash = await multiSigWallet.getTransactionHash(destination, value, data, nextNonce);
 
+    console.log('\nTransaction Details:');
+    console.log('Operation:', operation);
+    console.log('Current Nonce:', currentNonce.toString());
+    console.log('Next Nonce:', nextNonce.toString());
     console.log('Transaction Hash (what has to be signed):', txHash);
     console.log('Transaction Data (what we want to execute):', data);
   });
@@ -110,7 +111,7 @@ task('execute-tx', 'Executes a signed MultiSig transaction')
     const multiSigWallet = await hre.ethers.getContractAt('MultiSigWallet', destinationAddress);
 
     // Convert value to BigInt for consistency
-    const valueBigInt = BigInt(value);
+    const _value = BigInt(value);
 
     // Parse signatures
     const signatureArray = signatures.split(',').map((sig: string) => sig.trim());
@@ -118,16 +119,18 @@ task('execute-tx', 'Executes a signed MultiSig transaction')
     console.log('Transaction Details:');
     console.log('MultiSig Address:', destinationAddress);
     console.log('Destination Contract:', destinationContractAddress);
-    console.log('Value:', valueBigInt.toString());
+    console.log('Value:', _value.toString());
     console.log('Data:', data);
+    console.log('Nonce:',(await multiSigWallet.nonce())+1n);
     console.log('Number of signatures:', signatureArray.length);
     console.log('Signatures:', signatureArray);
 
     try {
       const tx = await multiSigWallet.executeTransaction(
         destinationContractAddress,
-        valueBigInt,
+        _value,
         data,
+        (await multiSigWallet.nonce())+1n,
         signatureArray
       );
 
