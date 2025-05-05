@@ -189,8 +189,7 @@ describe('MultiSigWallet', function () {
       const signature = await signer1.signMessage(ethers.getBytes(txHash));
 
       await expect(
-        multiSigWallet.executeTransaction(to, value, data,        nonce + BigInt(1),
-        [signature]),
+        multiSigWallet.executeTransaction(to, value, data, nonce + BigInt(1), [signature]),
       ).to.be.revertedWithCustomError(multiSigWallet, 'insufficientSignatures');
     });
 
@@ -205,8 +204,10 @@ describe('MultiSigWallet', function () {
       const validSignature = await signer1.signMessage(ethers.getBytes(txHash));
 
       await expect(
-        multiSigWallet.executeTransaction(to, value, data,        nonce + BigInt(1),
-        [invalidSignature, validSignature])
+        multiSigWallet.executeTransaction(to, value, data, nonce + BigInt(1), [
+          invalidSignature,
+          validSignature,
+        ]),
       ).to.be.revertedWithCustomError(multiSigWallet, 'invalidSignatures');
     });
 
@@ -249,12 +250,17 @@ describe('MultiSigWallet', function () {
       const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
 
       // First execution should succeed
-      await multiSigWallet.executeTransaction(to, value, data,        nonce + BigInt(1),
-      [signature1, signature2]);
+      await multiSigWallet.executeTransaction(to, value, data, nonce + BigInt(1), [
+        signature1,
+        signature2,
+      ]);
 
       // Second execution should fail
       await expect(
-        multiSigWallet.executeTransaction(to, value, data, nonce + BigInt(1), [signature1, signature2]),
+        multiSigWallet.executeTransaction(to, value, data, nonce + BigInt(1), [
+          signature1,
+          signature2,
+        ]),
       ).to.be.revertedWithCustomError(multiSigWallet, 'transactionAlreadyExecuted');
     });
   });
