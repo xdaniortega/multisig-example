@@ -72,15 +72,15 @@ describe('MultiSigWallet', function () {
         data,
         nonce + BigInt(1),
       );
-      console.log("txHash", txHash);
+      console.log('txHash', txHash);
 
       const txHash2 = await multiSigWallet.getTransactionHash(
-       '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+        '0x5FbDB2315678afecb367f032d93F642f64180aa3',
         '0',
         '0xa9059cbb00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8000000000000000000000000000000000000000000000002b5e3af16b1880000',
         BigInt(1),
       );
-      console.log("txHash2", txHash2);
+      console.log('txHash2', txHash2);
 
       // Sign the raw hash directly
       const signature1 = await owner.signMessage(ethers.getBytes(txHash));
@@ -88,9 +88,9 @@ describe('MultiSigWallet', function () {
 
       const signature1_2 = await owner.signMessage(ethers.getBytes(txHash2));
       const signature2_2 = await signer1.signMessage(ethers.getBytes(txHash2));
-      console.log("signature1_2", signature1_2);
-      console.log("signature2_2", signature2_2);
-      
+      console.log('signature1_2', signature1_2);
+      console.log('signature2_2', signature2_2);
+
       console.log('Tx Hash:', txHash);
       console.log('Signature 1:', signature1);
       console.log('Signature 2:', signature2);

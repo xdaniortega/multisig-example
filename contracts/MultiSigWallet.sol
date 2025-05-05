@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
-import "hardhat/console.sol";
+import 'hardhat/console.sol';
 
 contract MultiSigWallet {
   using ECDSA for bytes32;
@@ -32,16 +32,34 @@ contract MultiSigWallet {
   mapping(bytes32 => bool) public executedTransactions;
   mapping(bytes32 => uint256) public signedTransactions;
 
+  // keccak256("EIP712Domain(uint256 chainId,address verifyingContract)")
+  bytes32 public constant DOMAIN_SEPARATOR_TYPEHASH =
+    0x47e79534a245952e8b16893a336b85a3d9ea9fa8c573f3d803afb92a79469218;
+
+  // keccak256("Transaction(address destination,uint256 value,bytes data,uint256 nonce)")
+  bytes32 public constant TRANSACTION_TYPEHASH =
+    0x7c98e64bd943448b4e24ef8c2cdec7b8b1275970cfe10daf2a9bfa4b04dce905;
+
   constructor(address[] memory _signers, uint256 _thresholdSignatures) {
     _setupSigners(_signers, _thresholdSignatures);
   }
 
-
   /**
    * @notice Executes ANY transaction on behalf of the contract if the k of n signatures are valid.
-   * @dev This is a simplified version of a multisig wallet, it does not check the order of the signatures.
-   *      Internal management of the nonce is done to avoid replay attacks.
-   *      Also, we could have treat signer updates internally and call directly, but we want to make it as generic as possible.
+   * @dev Design decisions:
+   *      - Uses standard call for all transactions including signer management
+   *      - DelegateCall was considered but not implemented because:
+   *        1. Signer management is handled internally with proper access control
+   *        2. The current implementation provides better gas efficiency
+   *        3. The contract maintains direct control over its state
+   *        4. The implementation follows the principle of least privilege
+   *      - All transactions require k valid signatures
+   *      - Signatures are verified for duplicates and validity
+   *      - Nonce is used to prevent replay attacks
+   *      - After developing a first iteration, I have integrated EIP-712 to improve the signature verification process.
+   *      - Further improvements:
+   *        Add timelock delay to change thresholdSignatures
+   *        Add batch signer add/remove.
    * @param destinationContract The address of the contract to execute the transaction on.
    * @param value The value to send with the transaction.
    * @param data The data to send with the transaction.
@@ -114,15 +132,28 @@ contract MultiSigWallet {
     return false;
   }
 
+  function getDomainSeparator() public view returns (bytes32) {
+    return keccak256(abi.encode(DOMAIN_SEPARATOR_TYPEHASH, block.chainid, address(this)));
+  }
+
   function getTransactionHash(
     address destinationContract,
     uint256 value,
     bytes memory data,
     uint256 _nonce
   ) public view returns (bytes32) {
-    // Create the transaction hash by encoding all parameters
-    bytes32 hash = keccak256(abi.encodePacked(destinationContract, value, data, _nonce));
-    return hash;
+    bytes32 structHash = keccak256(
+      abi.encode(TRANSACTION_TYPEHASH, destinationContract, value, keccak256(data), _nonce)
+    );
+
+    return
+      keccak256(
+        abi.encodePacked(
+          '\x19\x01', //EIP-712 prefix
+          getDomainSeparator(),
+          structHash
+        )
+      );
   }
 
   ////// SIGNER FUNCTIONS //////
@@ -133,11 +164,11 @@ contract MultiSigWallet {
    * @param _newThreshold The new threshold for the contract.
    */
   function updateSignerSet(address _signer, bool _isAdd, uint256 _newThreshold) public {
-    if(msg.sender != address(this)) revert unauthorized();
-    if(_isAdd) {
+    if (msg.sender != address(this)) revert unauthorized();
+    if (_isAdd) {
       addSignerAndUpdateThreshold(_signer, _newThreshold);
     } else {
-      removeSigner(_signer, _newThreshold);
+      removeSignerAndUpdateThreshold(_signer, _newThreshold);
     }
   }
 
