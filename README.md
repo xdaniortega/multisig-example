@@ -130,6 +130,75 @@ Expected output:
 Balance for 0x70997970C51812dc3A010C7d01b50e0d17dc79C8: 50.0 tokens
 ```
 
+## Managing Signers
+
+### Adding a New Signer
+
+1. Generate the transaction to add a new signer:
+```bash
+npx hardhat generate-tx addSigners 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512  0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC 3 --network localhost
+```
+
+Expected output:
+```
+Transaction Hash (what has to be signed): 0x1234...5678
+Transaction Data (what we want to execute): 0x...
+```
+
+2. Sign the transaction with two different signers (similar to transfer example)
+
+3. Execute the transaction:
+```bash
+npx hardhat execute-tx 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 0 0x... signature1,signature2 --network localhost
+```
+
+4. Verify the new signer was added:
+```bash
+npx hardhat getSigners 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 --network localhost
+```
+
+Expected output:
+```
+Current Signers:
+1. 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+2. 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+3. 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
+Current Threshold: 3
+```
+
+### Removing a Signer
+
+1. Generate the transaction to remove a signer:
+```bash
+npx hardhat generate-tx removeSigners 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC 2 --network localhost
+```
+
+Expected output:
+```
+Transaction Hash (what has to be signed): 0x5678...1234
+Transaction Data (what we want to execute): 0x...
+```
+
+2. Sign the transaction with two different signers (similar to transfer example)
+
+3. Execute the transaction:
+```bash
+npx hardhat execute-tx 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 0 0x... signature1,signature2 --network localhost
+```
+
+4. Verify the signer was removed:
+```bash
+npx hardhat getSigners 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 --network localhost
+```
+
+Expected output:
+```
+Current Signers:
+1. 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+2. 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+Current Threshold: 2
+```
+
 ## Addresses Used in This Process
 
 - MultiSig Wallet: `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512`

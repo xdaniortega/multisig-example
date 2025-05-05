@@ -60,10 +60,14 @@ task('generate-tx', 'Generates transaction data for the MultiSig')
       destination = await erc20Mock.getAddress();
     } else if (operation === 'addSigners' || operation === 'removeSigners') {
       const multiSigInterface = new hre.ethers.Interface([
-        'function addSigner(address newSigner, uint256 newThreshold)',
-        'function removeSigner(address signerToRemove, uint256 newThreshold)',
+        'function updateSignerSet(address signer, bool isAdd, uint256 newThreshold, bytes[] signatures)',
       ]);
-      data = multiSigInterface.encodeFunctionData(operation, [tokenAddress, recipientAddress]);
+      data = multiSigInterface.encodeFunctionData('updateSignerSet', [
+        tokenAddress,
+        operation === 'addSigners',
+        recipientAddress,
+        [] // Empty signatures array as they will be provided during execution
+      ]);
       destination = destinationAddress;
     } else {
       throw new Error('Invalid operation. Use: transfer, addSigners, or removeSigners');
@@ -147,4 +151,20 @@ task('balance', 'Get ERC20 token balance for an address')
     
     const balance = await erc20Mock.balanceOf(address);
     console.log(`Balance for ${address}: ${hre.ethers.formatEther(balance)} tokens`);
+  });
+
+task('getSigners', 'Get current signers and threshold of the MultiSig wallet')
+  .addPositionalParam('multiSigAddress', 'MultiSig wallet address')
+  .setAction(async (taskArgs, hre) => {
+    const { multiSigAddress } = taskArgs;
+    const multiSigWallet = await hre.ethers.getContractAt('MultiSigWallet', multiSigAddress);
+    
+    const signers = await multiSigWallet.getSigners();
+    const threshold = await multiSigWallet.thresholdSignatures();
+    
+    console.log('Current Signers:');
+    signers.forEach((signer, index) => {
+      console.log(`${index + 1}. ${signer}`);
+    });
+    console.log(`Current Threshold: ${threshold}`);
   }); 

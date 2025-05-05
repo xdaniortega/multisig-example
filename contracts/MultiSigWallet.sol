@@ -33,9 +33,20 @@ contract MultiSigWallet {
   mapping(bytes32 => uint256) public signedTransactions;
 
   constructor(address[] memory _signers, uint256 _thresholdSignatures) {
-    setupSigners(_signers, _thresholdSignatures);
+    _setupSigners(_signers, _thresholdSignatures);
   }
 
+
+  /**
+   * @notice Executes ANY transaction on behalf of the contract if the k of n signatures are valid.
+   * @dev This is a simplified version of a multisig wallet, it does not check the order of the signatures.
+   *      Internal management of the nonce is done to avoid replay attacks.
+   *      Also, we could have treat signer updates internally and call directly, but we want to make it as generic as possible.
+   * @param destinationContract The address of the contract to execute the transaction on.
+   * @param value The value to send with the transaction.
+   * @param data The data to send with the transaction.
+   * @param signatures The signatures of the signers.
+   */
   function executeTransaction(
     address destinationContract,
     uint256 value,
@@ -43,15 +54,15 @@ contract MultiSigWallet {
     bytes[] memory signatures
   ) public {
     if (signatures.length < thresholdSignatures) revert insufficientSignatures();
+
     uint256 _nonce = nonce;
     bytes32 txHash = getTransactionHash(destinationContract, value, data, ++_nonce);
     bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
-  console.log("prev nonce", nonce);
+    if (executedTransactions[ethSignedHash]) revert transactionAlreadyExecuted();
+
     if (checkSignatures(ethSignedHash, signatures)) {
-      if (executedTransactions[ethSignedHash]) revert transactionAlreadyExecuted();
       executedTransactions[ethSignedHash] = true;
       nonce = _nonce;
-      console.log("nonce updated",nonce);
       _executeTransaction(destinationContract, value, data);
     } else {
       revert invalidSignatures();
@@ -115,13 +126,73 @@ contract MultiSigWallet {
   }
 
   ////// SIGNER FUNCTIONS //////
+  /**
+   * @notice Updates the signer set, we protect this function checking the sender is the contract itself.
+   * @param _signer The address of the signer to add or remove.
+   * @param _isAdd Whether to add or remove the signer.
+   * @param _newThreshold The new threshold for the contract.
+   */
+  function updateSignerSet(address _signer, bool _isAdd, uint256 _newThreshold) public {
+    if(msg.sender != address(this)) revert unauthorized();
+    if(_isAdd) {
+      addSignerAndUpdateThreshold(_signer, _newThreshold);
+    } else {
+      removeSigner(_signer, _newThreshold);
+    }
+  }
+
+  /**
+   * @notice Adds a signer to the contract.
+   * @param _signer The address of the signer to add.
+   * @param _newThreshold The new threshold for the contract.
+   */
+  function addSignerAndUpdateThreshold(address _signer, uint256 _newThreshold) internal {
+    if (_signer == address(0)) revert incorrectSigner();
+    if (isSigner[_signer]) revert signerAlreadyExists();
+    if (_newThreshold > signers.length || _newThreshold == 0) revert incorrectThreshold();
+
+    isSigner[_signer] = true;
+    signers.push(_signer);
+    thresholdSignatures = _newThreshold;
+
+    emit SignerAdded(msg.sender, _signer, _newThreshold);
+    emit ThresholdUpdated(msg.sender, _newThreshold);
+  }
+
+  /**
+   * @notice Removes a signer from the contract.
+   * @param _signer The address of the signer to remove.
+   * @param _newThreshold The new threshold for the contract.
+   */
+  function removeSignerAndUpdateThreshold(address _signer, uint256 _newThreshold) internal {
+    if (!isSigner[_signer]) revert signerNotFound();
+    if (_newThreshold == 0 || _newThreshold > signers.length - 1) revert incorrectThreshold();
+
+    // Remove signer from mapping
+    isSigner[_signer] = false;
+
+    // Remove signer from array
+    for (uint256 i = 0; i < signers.length; i++) {
+      if (signers[i] == _signer) {
+        signers[i] = signers[signers.length - 1];
+        signers.pop();
+        break;
+      }
+    }
+    thresholdSignatures = _newThreshold;
+
+    emit SignerRemoved(msg.sender, _signer);
+    emit ThresholdUpdated(msg.sender, _newThreshold);
+  }
+
+  ////// INTERNAL FUNCTIONS //////
 
   /**
    * @notice Sets the initial storage of the contract.
    * @param _signers List of Safe owners.
    * @param _threshold Number of required confirmations for a Safe transaction.
    */
-  function setupSigners(address[] memory _signers, uint256 _threshold) internal {
+  function _setupSigners(address[] memory _signers, uint256 _threshold) internal {
     uint256 signersLength = _signers.length;
     // Validate that the threshold is smaller than the number of added owners.
     if (_threshold > signersLength || _threshold == 0) revert incorrectThreshold();
@@ -139,48 +210,6 @@ contract MultiSigWallet {
     thresholdSignatures = _threshold;
 
     emit SignersSetup(msg.sender, _signers, _threshold);
-  }
-
-  function addSignerAndUpdateThreshold(address _signer, uint256 _newThreshold) public {
-    if (!isSigner[msg.sender]) revert unauthorized();
-    if (_signer == address(0) || _signer == address(this)) revert incorrectSigner();
-    if (isSigner[_signer]) revert signerAlreadyExists();
-    if (_newThreshold > signers.length + 1 || _newThreshold == 0) revert incorrectThreshold();
-
-    isSigner[_signer] = true;
-    signers.push(_signer);
-    thresholdSignatures = _newThreshold;
-
-    emit SignerAdded(msg.sender, _signer, _newThreshold);
-    emit ThresholdUpdated(msg.sender, _newThreshold);
-  }
-
-  /**
-   * @notice Removes a signer from the contract.
-   * @param _signer The address of the signer to remove.
-   * @dev Here only 1 signer can remove another signer, not recommended for production.
-   *      We could integrate k-of-n multisig to allow more security.
-   */
-  function removeSigner(address _signer, uint256 _newThreshold) public {
-    if (!isSigner[msg.sender]) revert unauthorized();
-    if (!isSigner[_signer]) revert signerNotFound();
-    if (signers.length <= thresholdSignatures) revert incorrectThreshold();
-
-    // Remove signer from mapping
-    isSigner[_signer] = false;
-
-    // Remove signer from array
-    for (uint256 i = 0; i < signers.length; i++) {
-      if (signers[i] == _signer) {
-        signers[i] = signers[signers.length - 1];
-        signers.pop();
-        break;
-      }
-    }
-    thresholdSignatures = _newThreshold;
-
-    emit SignerRemoved(msg.sender, _signer);
-    emit ThresholdUpdated(msg.sender, _newThreshold);
   }
 
   function _executeTransaction(
