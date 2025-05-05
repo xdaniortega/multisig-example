@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
-import 'hardhat/console.sol';
 
 contract MultiSigWallet {
   using ECDSA for bytes32;
@@ -60,28 +59,29 @@ contract MultiSigWallet {
    *      - Further improvements:
    *        Add timelock delay to change thresholdSignatures
    *        Add batch signer add/remove.
-   * @param destinationContract The address of the contract to execute the transaction on.
-   * @param value The value to send with the transaction.
-   * @param data The data to send with the transaction.
-   * @param signatures The signatures of the signers.
+   * @param _destinationContract The address of the contract to execute the transaction on.
+   * @param _value The value to send with the transaction.
+   * @param _data The data to send with the transaction.
+   * @param _nonce The nonce of the transaction.
+   * @param _signatures The signatures of the signers.
    */
   function executeTransaction(
-    address destinationContract,
-    uint256 value,
-    bytes memory data,
-    bytes[] memory signatures
+    address _destinationContract,
+    uint256 _value,
+    bytes memory _data,
+    uint256 _nonce,
+    bytes[] memory _signatures
   ) public {
-    if (signatures.length < thresholdSignatures) revert insufficientSignatures();
+    if (_signatures.length < thresholdSignatures) revert insufficientSignatures();
 
-    uint256 _nonce = nonce;
-    bytes32 txHash = getTransactionHash(destinationContract, value, data, ++_nonce);
+    bytes32 txHash = getTransactionHash(_destinationContract, _value, _data, _nonce);
     bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
     if (executedTransactions[ethSignedHash]) revert transactionAlreadyExecuted();
 
-    if (checkSignatures(ethSignedHash, signatures)) {
+    if (checkSignatures(ethSignedHash, _signatures)) {
       executedTransactions[ethSignedHash] = true;
       nonce = _nonce;
-      _executeTransaction(destinationContract, value, data);
+      _executeTransaction(_destinationContract, _value, _data);
     } else {
       revert invalidSignatures();
     }

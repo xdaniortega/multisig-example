@@ -72,37 +72,23 @@ describe('MultiSigWallet', function () {
         data,
         nonce + BigInt(1),
       );
-      console.log('txHash', txHash);
-
-      const txHash2 = await multiSigWallet.getTransactionHash(
-        '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-        '0',
-        '0xa9059cbb00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8000000000000000000000000000000000000000000000002b5e3af16b1880000',
-        BigInt(1),
-      );
-      console.log('txHash2', txHash2);
 
       // Sign the raw hash directly
       const signature1 = await owner.signMessage(ethers.getBytes(txHash));
       const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
 
-      const signature1_2 = await owner.signMessage(ethers.getBytes(txHash2));
-      const signature2_2 = await signer1.signMessage(ethers.getBytes(txHash2));
-      console.log('signature1_2', signature1_2);
-      console.log('signature2_2', signature2_2);
-
-      console.log('Tx Hash:', txHash);
-      console.log('Signature 1:', signature1);
-      console.log('Signature 2:', signature2);
       // Balance of contract before
       const balanceBefore = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
       expect(balanceBefore).to.equal(ethers.parseEther('100'));
 
       // Execute the transaction
-      await multiSigWallet.executeTransaction(await erc20Mock.getAddress(), value, data, [
-        signature1,
-        signature2,
-      ]);
+      await multiSigWallet.executeTransaction(
+        await erc20Mock.getAddress(),
+        value,
+        data,
+        nonce + BigInt(1),
+        [signature1, signature2],
+      );
 
       // Balance of contract after
       const balanceAfter = await erc20Mock.balanceOf(await multiSigWallet.getAddress());
@@ -121,7 +107,33 @@ describe('MultiSigWallet', function () {
       const newSigner = nonSigner;
       const newThreshold = 3;
 
-      await multiSigWallet.addSignerAndUpdateThreshold(newSigner.address, newThreshold);
+      // Create transaction data for adding signer
+      const data = multiSigWallet.interface.encodeFunctionData('updateSignerSet', [
+        newSigner.address,
+        true,
+        newThreshold,
+      ]);
+
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(
+        await multiSigWallet.getAddress(),
+        0,
+        data,
+        nonce + BigInt(1),
+      );
+
+      // Sign the transaction
+      const signature1 = await owner.signMessage(ethers.getBytes(txHash));
+      const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
+
+      // Execute the transaction
+      await multiSigWallet.executeTransaction(
+        await multiSigWallet.getAddress(),
+        0,
+        data,
+        nonce + BigInt(1),
+        [signature1, signature2],
+      );
 
       const signers = await multiSigWallet.getSigners();
       expect(signers).to.include(newSigner.address);
@@ -129,11 +141,39 @@ describe('MultiSigWallet', function () {
     });
 
     it('Signer Management :: Should remove signer and update threshold', async () => {
-      let newThreshold = 2;
-      await multiSigWallet.removeSigner(signer3.address, newThreshold);
+      const newThreshold = 2;
+
+      // Create transaction data for removing signer
+      const data = multiSigWallet.interface.encodeFunctionData('updateSignerSet', [
+        nonSigner.address,
+        false,
+        newThreshold,
+      ]);
+
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(
+        await multiSigWallet.getAddress(),
+        0,
+        data,
+        nonce + BigInt(1),
+      );
+
+      // Sign the transaction
+      const signature1 = await owner.signMessage(ethers.getBytes(txHash));
+      const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
+      const signature3 = await nonSigner.signMessage(ethers.getBytes(txHash));
+
+      // Execute the transaction
+      await multiSigWallet.executeTransaction(
+        await multiSigWallet.getAddress(),
+        0,
+        data,
+        nonce + BigInt(1),
+        [signature1, signature2, signature3],
+      );
 
       const signers = await multiSigWallet.getSigners();
-      expect(signers).to.not.include(signer3.address);
+      expect(signers).to.not.include(nonSigner.address);
       expect(await multiSigWallet.thresholdSignatures()).to.equal(newThreshold);
     });
   });
@@ -146,10 +186,11 @@ describe('MultiSigWallet', function () {
 
       const nonce = await multiSigWallet.nonce();
       const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
-      const signature = await signer1.signMessage(txHash);
+      const signature = await signer1.signMessage(ethers.getBytes(txHash));
 
       await expect(
-        multiSigWallet.executeTransaction(to, value, data, [signature]),
+        multiSigWallet.executeTransaction(to, value, data,        nonce + BigInt(1),
+        [signature]),
       ).to.be.revertedWithCustomError(multiSigWallet, 'insufficientSignatures');
     });
 
@@ -160,18 +201,61 @@ describe('MultiSigWallet', function () {
 
       const nonce = await multiSigWallet.nonce();
       const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
-      const invalidSignature = await nonSigner.signMessage(txHash);
-      const validSignature = await signer1.signMessage(txHash);
+      const invalidSignature = await nonSigner.signMessage(ethers.getBytes(txHash));
+      const validSignature = await signer1.signMessage(ethers.getBytes(txHash));
 
       await expect(
-        multiSigWallet.executeTransaction(to, value, data, [invalidSignature, validSignature]),
+        multiSigWallet.executeTransaction(to, value, data,        nonce + BigInt(1),
+        [invalidSignature, validSignature])
       ).to.be.revertedWithCustomError(multiSigWallet, 'invalidSignatures');
     });
 
     it('Signer Management :: Should fail when non-signer tries to add signer', async () => {
+      const data = multiSigWallet.interface.encodeFunctionData('updateSignerSet', [
+        nonSigner.address,
+        true,
+        2,
+      ]);
+
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(
+        await multiSigWallet.getAddress(),
+        0,
+        data,
+        nonce + BigInt(1),
+      );
+
+      const signature = await nonSigner.signMessage(ethers.getBytes(txHash));
+
       await expect(
-        multiSigWallet.connect(signer3).addSignerAndUpdateThreshold(signer3.address, 2),
-      ).to.be.revertedWithCustomError(multiSigWallet, 'unauthorized');
+        multiSigWallet.executeTransaction(
+          await multiSigWallet.getAddress(),
+          0,
+          data,
+          nonce + BigInt(1),
+          [signature],
+        ),
+      ).to.be.revertedWithCustomError(multiSigWallet, 'insufficientSignatures');
+    });
+
+    it('Should fail when trying to execute same transaction twice', async () => {
+      const to = signer1.address;
+      const value = ethers.parseEther('0');
+      const data = '0x';
+
+      const nonce = await multiSigWallet.nonce();
+      const txHash = await multiSigWallet.getTransactionHash(to, value, data, nonce + BigInt(1));
+      const signature1 = await owner.signMessage(ethers.getBytes(txHash));
+      const signature2 = await signer1.signMessage(ethers.getBytes(txHash));
+
+      // First execution should succeed
+      await multiSigWallet.executeTransaction(to, value, data,        nonce + BigInt(1),
+      [signature1, signature2]);
+
+      // Second execution should fail
+      await expect(
+        multiSigWallet.executeTransaction(to, value, data, nonce + BigInt(1), [signature1, signature2]),
+      ).to.be.revertedWithCustomError(multiSigWallet, 'transactionAlreadyExecuted');
     });
   });
 });
