@@ -37,10 +37,10 @@ Examples:
 npx hardhat generate-tx transfer <multiSigAddress> <tokenAddress> <recipientAddress> <amount>
 
 # Add a new signer
-npx hardhat generate-tx addSigners <multiSigAddress> <newSignerAddress> <newThreshold> 0
+npx hardhat generate-tx addSigners <multiSigAddress> <destinationContractAddress> <newSignerAddress> <newThreshold> 0
 
 # Remove a signer
-npx hardhat generate-tx removeSigners <multiSigAddress> <signerToRemove> <newThreshold> 0
+npx hardhat generate-tx removeSigners <multiSigAddress> <destinationContractAddress> <signerToRemove> <newThreshold> 0
 ```
 
 ### Sign Transaction
@@ -316,7 +316,6 @@ Current Signers:
 3. 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
 Current Threshold: 2
 ```
-
 
 ## Addresses Used in This Process
 

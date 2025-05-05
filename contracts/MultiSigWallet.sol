@@ -3,8 +3,9 @@ pragma solidity 0.8.28;
 
 import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
+import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 
-contract MultiSigWallet {
+contract MultiSigWallet is ReentrancyGuard {
   using ECDSA for bytes32;
 
   error incorrectThreshold();
@@ -29,7 +30,6 @@ contract MultiSigWallet {
   uint256 public thresholdSignatures;
   uint256 public nonce;
   mapping(bytes32 => bool) public executedTransactions;
-  mapping(bytes32 => uint256) public signedTransactions;
 
   // keccak256("EIP712Domain(uint256 chainId,address verifyingContract)")
   bytes32 public constant DOMAIN_SEPARATOR_TYPEHASH =
@@ -71,7 +71,7 @@ contract MultiSigWallet {
     bytes memory _data,
     uint256 _nonce,
     bytes[] memory _signatures
-  ) public {
+  ) public nonReentrant {
     if (_signatures.length < thresholdSignatures) revert insufficientSignatures();
 
     bytes32 txHash = getTransactionHash(_destinationContract, _value, _data, _nonce);
