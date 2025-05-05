@@ -8,7 +8,7 @@ This project demonstrates a MultiSig wallet implementation with the following fe
 - ERC20 token support
 - Please, go to the smart contract natSpec comments to see more details.
 
-I decided to use the newest Hardhat version so I can learn and go through new challenges while developing this home assesment, at the same time, I evaluated the differences on using tasks and ignition modules compared to previous hardaht versions and I can say I clearly see an improvement in development times.
+I decided to use the newest Hardhat version so I can learn and go through new challenges while developing this home assesment, at the same time, I evaluated the differences on using tasks and ignition modules compared to previous hardhat versions and I can say I clearly see an improvement in development times.
 
 ## Scripts usage
 
