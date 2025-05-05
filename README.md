@@ -8,6 +8,7 @@ This project demonstrates a MultiSig wallet implementation with the following fe
 - ERC20 token support
 - Please, go to the smart contract natSpec comments to see more details.
 
+I decided to use the newest Hardhat version so I can learn and go through new challenges while developing this home assesment, at the same time, I evaluated the differences on using tasks and ignition modules compared to previous hardaht versions and I can say I clearly see an improvement in development times.
 
 ## Scripts usage
 
@@ -26,9 +27,9 @@ npx hardhat generate-tx <operation> <multiSigAddress> <targetAddress> <param2> <
 Where:
 - `operation`: Type of operation (`transfer`, `addSigners`, `removeSigners`)
 - `multiSigAddress`: Address of the MultiSig wallet
-- `targetAddress`: Target address (token address for transfer, new signer for add/remove)
-- `param2`: Second parameter (recipient for transfer, new threshold for add/remove)
-- `param3`: Third parameter (amount for transfer, not used for add/remove)
+- `targetAddress`: Target address (token address for transfer,ddress of the MultiSig wallet to add/remove)
+- `param2`: Second parameter (recipient for transfer, new signer for add/remove)
+- `param3`: Third parameter (amount for transfer, new threshold for add/remove)
 
 Examples:
 ```bash
