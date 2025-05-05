@@ -5,6 +5,9 @@ import "@nomicfoundation/hardhat-ignition-ethers";
 import "hardhat-gas-reporter";
 import * as dotenv from "dotenv";
 
+// Import tasks
+import './tasks';
+
 dotenv.config();
 
 const mnemonic = process.env.MNEMONIC;
